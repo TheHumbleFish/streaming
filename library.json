@@ -1,0 +1,45 @@
+{
+  "siteName": "My Library",
+  "items": [
+    {
+      "id": "demo-movie",
+      "type": "movie",
+      "title": "Demo Movie",
+      "year": 2025,
+      "rating": "G",
+      "runtime": "0m 20s",
+      "genres": ["Demo"],
+      "description": "A 20-second placeholder so you can see the player, subtitles and resume feature working. Delete this entry once you add your own titles.",
+      "poster": "media/demo/poster.jpg",
+      "backdrop": "media/demo/backdrop.jpg",
+      "src": "media/demo/movie.mp4",
+      "subtitles": [
+        { "label": "English", "lang": "en", "src": "media/demo/movie.en.vtt", "default": true }
+      ],
+      "featured": true,
+      "added": "2025-01-01"
+    },
+    {
+      "id": "demo-show",
+      "type": "show",
+      "title": "Demo Show",
+      "year": 2025,
+      "rating": "G",
+      "genres": ["Demo"],
+      "description": "Two tiny episodes to show how seasons, episode lists and auto-play of the next episode work.",
+      "poster": "media/demo/show/poster.jpg",
+      "backdrop": "media/demo/show/backdrop.jpg",
+      "featured": true,
+      "added": "2025-01-02",
+      "seasons": [
+        {
+          "number": 1,
+          "episodes": [
+            { "number": 1, "title": "First Episode", "description": "The first demo episode.", "runtime": "12s", "src": "media/demo/show/s1e1.mp4" },
+            { "number": 2, "title": "Second Episode", "description": "The second demo episode.", "runtime": "12s", "src": "media/demo/show/s1e2.mp4" }
+          ]
+        }
+      ]
+    }
+  ]
+}
