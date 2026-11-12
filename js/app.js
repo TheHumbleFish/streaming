@@ -7,6 +7,8 @@
 
   /* ---------- helpers ---------- */
   const $ = (sel, root = document) => root.querySelector(sel);
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const finePointer = matchMedia('(hover: hover) and (pointer: fine)').matches;
 
   // Tiny DOM builder. Text is always set via textContent/append, never innerHTML.
   const h = (tag, props, ...kids) => {
@@ -37,6 +39,28 @@
     const hh = Math.floor(s / 3600), mm = Math.floor((s % 3600) / 60), ss = s % 60;
     return hh ? `${hh}:${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}` : `${mm}:${String(ss).padStart(2, '0')}`;
   };
+
+  /* ---------- icons (static, trusted markup) ---------- */
+  const F = 'fill="currentColor" stroke="none"';
+  const ICONS = {
+    play: `<path d="M7 4.5v15l13-7.5z" ${F}/>`,
+    pause: `<path d="M6 4h4v16H6zM14 4h4v16h-4z" ${F}/>`,
+    back: '<path d="M19 12H5M11 6l-6 6 6 6"/>',
+    x: '<path d="M6 6l12 12M18 6L6 18"/>',
+    plus: '<path d="M12 5v14M5 12h14"/>',
+    check: '<path d="M5 13l4 4 10-10"/>',
+    left: '<path d="M15 5l-7 7 7 7"/>',
+    right: '<path d="M9 5l7 7-7 7"/>',
+    vol: `<path d="M4 9v6h4l5 4V5L8 9z" ${F}/><path d="M16.5 8.5a5 5 0 010 7M19 6a8.5 8.5 0 010 12"/>`,
+    mute: `<path d="M4 9v6h4l5 4V5L8 9z" ${F}/><path d="M17 9.5l5 5M22 9.5l-5 5"/>`,
+    full: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
+    exit: '<path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/>',
+    next: `<path d="M5 5l10 7-10 7z" ${F}/><path d="M19 5v14"/>`,
+    back10: '<path d="M12 5a8 8 0 1 1-8 8"/><path d="M15 2l-3 3 3 3"/><text x="12" y="16" text-anchor="middle" font-size="7.5" font-weight="700">10</text>',
+    fwd10: '<path d="M12 5a8 8 0 1 0 8 8"/><path d="M9 2l3 3-3 3"/><text x="12" y="16" text-anchor="middle" font-size="7.5" font-weight="700">10</text>',
+  };
+  const svg = (name) => `<svg viewBox="0 0 24 24" aria-hidden="true">${ICONS[name]}</svg>`;
+  const ico = (name) => { const s = h('span', { class: 'ico' }); s.innerHTML = svg(name); return s; };
 
   /* ---------- state ---------- */
   let lib = { siteName: 'Library', items: [] };
@@ -112,7 +136,21 @@
     store.set('list', myList);
   }
 
-  /* ---------- UI pieces ---------- */
+  /* ---------- small UI pieces ---------- */
+  const bgStyle = (item) => {
+    const bg = item.backdrop || item.poster;
+    return bg ? `background-image:url("${encodeURI(bg)}")` : '';
+  };
+
+  function toast(msg) {
+    const t = h('div', { class: 'toast', text: msg });
+    $('#toast').append(t);
+    setTimeout(() => {
+      t.classList.add('out');
+      t.addEventListener('animationend', () => t.remove());
+    }, 2200);
+  }
+
   function metaRow(item) {
     const bits = [];
     if (item.rating) bits.push(h('span', { class: 'tag', text: item.rating }));
@@ -125,9 +163,16 @@
     return h('div', { class: 'meta' }, bits);
   }
 
+  function lazyImg(src, extra) {
+    const img = h('img', { src, alt: '', loading: 'lazy', decoding: 'async', ...extra });
+    img.addEventListener('load', () => img.classList.add('ld'));
+    img.addEventListener('error', () => img.remove());
+    return img;
+  }
+
   function card(item, opts = {}) {
-    const kids = [h('div', { class: 'fallback', text: item.title })];
-    if (item.poster) kids.push(h('img', { src: item.poster, alt: '', loading: 'lazy', onerror: (e) => e.target.remove() }));
+    const kids = [h('div', { class: 'fallback' }, h('span', { text: item.title }))];
+    if (item.poster) kids.push(lazyImg(item.poster));
     kids.push(h('div', { class: 'label', text: item.title }));
     if (opts.ratio) kids.push(h('div', { class: 'bar' }, h('i', { style: `width:${Math.round(opts.ratio * 100)}%` })));
     return h('button', {
@@ -136,28 +181,80 @@
     }, kids);
   }
 
+  const stagger = (cards) => { cards.forEach((c, i) => c.style.setProperty('--i', Math.min(i, 14))); return cards; };
+
   function rail(title, cards) {
-    const r = h('div', { class: 'rail' }, cards);
-    const btn = (cls, sym, dir) => h('button', {
-      class: `rail-btn ${cls}`, 'aria-label': dir < 0 ? 'Scroll left' : 'Scroll right', text: sym, tabindex: '-1',
+    const r = h('div', { class: 'rail' }, stagger(cards));
+    const btn = (cls, name, dir) => h('button', {
+      class: `rail-btn ${cls}`, 'aria-label': dir < 0 ? 'Scroll left' : 'Scroll right', tabindex: '-1',
       onclick: () => r.scrollBy({ left: dir * r.clientWidth * 0.85, behavior: 'smooth' }),
-    });
+    }, ico(name));
     return h('section', { class: 'section' },
       h('h2', { text: title }),
-      h('div', { class: 'rail-wrap' }, btn('left', '‹', -1), r, btn('right', '›', 1)));
+      h('div', { class: 'rail-wrap' }, btn('left', 'left', -1), r, btn('right', 'right', 1)));
   }
 
-  function hero(item) {
-    const bg = item.backdrop || item.poster;
-    const target = resumeTarget(item);
-    return h('section', { class: 'hero', style: bg ? `background-image:url("${encodeURI(bg)}")` : '' },
-      h('div', { class: 'hero-inner' },
-        h('h1', { text: item.title }),
+  /* ---------- hero (auto-rotating, parallax) ---------- */
+  function heroItems() {
+    const feat = lib.items.filter((i) => i.featured);
+    const pool = (feat.length ? feat : lib.items).slice();
+    for (let i = pool.length - 1; i > 0; i--) {         // shuffle
+      const j = Math.floor(Math.random() * (i + 1));
+      [pool[i], pool[j]] = [pool[j], pool[i]];
+    }
+    return pool.slice(0, 5);
+  }
+
+  function heroBlock(items) {
+    const bgs = items.map((it) => h('div', { class: 'hero-bg', style: bgStyle(it) }));
+    const inner = h('div', { class: 'hero-inner' });
+    let idx = -1, swapTimer = null;
+
+    const dots = items.length > 1 ? items.map((it, i) => h('button', {
+      class: 'dot', 'aria-label': `Show ${it.title}`, onclick: () => go(i),
+    }, h('i', { onanimationend: () => go((idx + 1) % items.length) }))) : [];
+
+    const content = (item) => {
+      const target = resumeTarget(item);
+      const title = h('h1', {});
+      item.title.split(/\s+/).filter(Boolean).forEach((w, i) => {
+        title.append(h('span', { class: 'w' }, h('span', { style: `--i:${i}`, text: w })), ' ');
+      });
+      return [
+        h('div', { class: 'kicker', text: `Featured · ${item.type === 'show' ? 'Series' : 'Film'}` }),
+        title,
         metaRow(item),
         h('p', { text: item.description || '' }),
         h('div', { class: 'row' },
-          target && h('button', { class: 'btn primary', text: '▶ ' + playLabel(item), onclick: () => openPlayer(item, target.key) }),
-          h('button', { class: 'btn', text: 'More info', onclick: () => openTitle(item.id) }))));
+          target && h('button', { class: 'btn primary', onclick: () => openPlayer(item, target.key) }, ico('play'), playLabel(item)),
+          h('button', { class: 'btn', text: 'More info', onclick: () => openTitle(item.id) })),
+      ];
+    };
+
+    function go(i) {
+      if (i === idx) return;
+      const first = idx < 0;
+      idx = i;
+      bgs.forEach((b, j) => b.classList.toggle('on', j === i));
+      dots.forEach((d, j) => { d.classList.remove('on'); d.classList.toggle('done', j < i); });
+      if (dots[i]) { void dots[i].offsetWidth; dots[i].classList.add('on'); }
+      clearTimeout(swapTimer);
+      const swap = () => {
+        inner.classList.remove('exit', 'enter');
+        inner.replaceChildren(...content(items[i]));
+        void inner.offsetWidth;
+        inner.classList.add('enter');
+      };
+      if (first || reduce) swap();
+      else { inner.classList.add('exit'); swapTimer = setTimeout(swap, 320); }
+    }
+
+    const root = h('section', { class: 'hero' },
+      h('div', { class: 'hero-bgs' }, bgs),
+      h('div', { class: 'hero-shade' }),
+      h('div', { class: 'hero-wrap' }, inner, dots.length ? h('div', { class: 'hero-dots' }, dots) : null));
+    go(0);
+    return root;
   }
 
   function emptyLibrary() {
@@ -168,17 +265,11 @@
   }
 
   /* ---------- views ---------- */
-  function pickFeatured() {
-    const feat = lib.items.filter((i) => i.featured);
-    const pool = feat.length ? feat : lib.items;
-    return pool[Math.floor(Math.random() * pool.length)];
-  }
-
   function gridPage(title, items, emptyMsg) {
     return h('div', { class: 'page' },
       h('h1', { text: title }),
       items.length
-        ? h('div', { class: 'grid' }, items.map((i) => card(i)))
+        ? h('div', { class: 'grid' }, stagger(items.map((i) => card(i))))
         : h('div', { class: 'empty', text: emptyMsg }));
   }
 
@@ -190,6 +281,22 @@
     return q.toLowerCase().split(/\s+/).filter(Boolean).every((w) => hay.includes(w));
   }
 
+  // Reveal rows as they scroll into view.
+  const revealer = 'IntersectionObserver' in window
+    ? new IntersectionObserver((entries) => {
+      for (const e of entries) if (e.isIntersecting) { e.target.classList.add('in'); revealer.unobserve(e.target); }
+    }, { rootMargin: '0px 0px -8% 0px', threshold: 0.12 })
+    : null;
+
+  function moveInk() {
+    const a = $('#nav a.active');
+    const ink = $('#navInk');
+    if (!a) { ink.style.opacity = '0'; return; }
+    ink.style.opacity = '1';
+    ink.style.width = a.offsetWidth + 'px';
+    ink.style.transform = `translateX(${a.offsetLeft}px)`;
+  }
+
   function renderView(hash) {
     const same = hash === renderedHash;
     const y = same ? window.scrollY : 0;
@@ -197,10 +304,10 @@
 
     document.querySelectorAll('#nav a').forEach((a) => {
       const v = a.dataset.view;
-      const active = (v === 'home' && hash === '#/') || (v === 'movies' && hash === '#/movies') ||
-        (v === 'shows' && hash === '#/shows') || (v === 'list' && hash === '#/list');
-      a.classList.toggle('active', active);
+      a.classList.toggle('active', (v === 'home' && hash === '#/') || (v === 'movies' && hash === '#/movies') ||
+        (v === 'shows' && hash === '#/shows') || (v === 'list' && hash === '#/list'));
     });
+    moveInk();
 
     const search = hash.match(/^#\/search\/(.*)$/);
     if (search) {
@@ -215,17 +322,24 @@
       main.append(gridPage('TV Shows', lib.items.filter((i) => i.type === 'show').sort(byTitle), 'No shows yet.'));
     } else if (hash === '#/list') {
       main.append(gridPage('My List', myList.map((id) => byId.get(id)).filter(Boolean),
-        'Nothing here yet. Open a title and choose “+ My List”.'));
+        'Nothing here yet. Open a title and choose “My List”.'));
     } else {
       renderHome();
     }
+
+    main.querySelectorAll('.section').forEach((s) => (revealer ? revealer.observe(s) : s.classList.add('in')));
     renderedHash = hash;
-    window.scrollTo(0, y);
+    window.scrollTo({ top: y, left: 0, behavior: 'instant' });
+    if (!same) {
+      main.classList.remove('view-in');
+      void main.offsetWidth;
+      main.classList.add('view-in');
+    }
   }
 
   function renderHome() {
     if (!lib.items.length) { main.append(emptyLibrary()); return; }
-    main.append(hero(pickFeatured()));
+    main.append(heroBlock(heroItems()));
 
     const cont = continueList();
     if (cont.length) {
@@ -236,9 +350,11 @@
     if (mine.length) main.append(rail('My List', mine.map((i) => card(i))));
 
     if (lib.items.length >= 4) {
-      const recent = [...lib.items].sort((a, b) => String(b.added || '').localeCompare(String(a.added || '')));
       const hasDates = lib.items.some((i) => i.added);
-      main.append(rail('Recently Added', (hasDates ? recent : [...lib.items].reverse()).slice(0, 20).map((i) => card(i))));
+      const recent = hasDates
+        ? [...lib.items].sort((a, b) => String(b.added || '').localeCompare(String(a.added || '')))
+        : [...lib.items].reverse();
+      main.append(rail('Recently Added', recent.slice(0, 20).map((i) => card(i))));
     }
 
     const genres = new Map();
@@ -251,6 +367,7 @@
   let modalItem = null;
   let modalSeason = null;
   let lastFocus = null;
+  let modalCloseTimer = null;
 
   const openTitle = (id) => { location.hash = '#/title/' + encodeURIComponent(id); };
 
@@ -260,20 +377,28 @@
   }
 
   function hideModal() {
-    if (modal.hidden) return;
-    modal.hidden = true;
+    if (modal.hidden || modal.classList.contains('closing')) return;
     modalItem = null;
-    if (el.player.hidden) document.body.classList.remove('lock');
-    if (lastFocus && document.contains(lastFocus)) lastFocus.focus({ preventScroll: true });
+    modal.classList.add('closing');
+    modalCloseTimer = setTimeout(() => {
+      modalCloseTimer = null;
+      modal.hidden = true;
+      modal.classList.remove('closing');
+      if (el.player.hidden) document.body.classList.remove('lock');
+      if (lastFocus && document.contains(lastFocus)) lastFocus.focus({ preventScroll: true });
+    }, reduce ? 0 : 290);
   }
 
   function showModal(item) {
+    const wasClosed = modal.hidden || modal.classList.contains('closing');
+    if (modalCloseTimer) { clearTimeout(modalCloseTimer); modalCloseTimer = null; modal.classList.remove('closing'); }
     if (modal.hidden) lastFocus = document.activeElement;
     if (modalItem !== item) {
       modalItem = item;
       const t = resumeTarget(item);
-      modalSeason = t && t.season != null ? t.season : (item.seasons && (item.seasons[0].number ?? 1));
+      modalSeason = t && t.season != null ? t.season : (item.seasons && item.seasons[0] && (item.seasons[0].number ?? 1));
     }
+    modalCard.classList.toggle('first', wasClosed);
     modal.hidden = false;
     document.body.classList.add('lock');
     renderModal();
@@ -282,22 +407,21 @@
 
   function renderModal() {
     const item = modalItem;
-    const bg = item.backdrop || item.poster;
     const target = resumeTarget(item);
 
     const facts = [];
-    if (item.cast && item.cast.length) facts.push(h('div', {}, h('b', { text: 'Cast: ' }), item.cast.join(', ')));
-    if (item.director) facts.push(h('div', {}, h('b', { text: 'Director: ' }), item.director));
+    if (item.cast && item.cast.length) facts.push(h('div', {}, h('b', { text: 'Cast  ' }), item.cast.join(', ')));
+    if (item.director) facts.push(h('div', {}, h('b', { text: 'Director  ' }), item.director));
 
     const epBox = h('div', { class: 'episodes' });
     const fillEpisodes = () => {
       epBox.replaceChildren();
-      episodesOf(item).filter((e) => e.season === modalSeason).forEach((e) => {
+      episodesOf(item).filter((e) => e.season === modalSeason).forEach((e, i) => {
         const r = ratioOf(e.key);
-        epBox.append(h('button', { class: 'ep', onclick: () => openPlayer(item, e.key) },
+        epBox.append(h('button', { class: 'ep', style: `--i:${Math.min(i, 12)}`, onclick: () => openPlayer(item, e.key) },
           h('div', { class: 'n', text: String(e.number) }),
           h('div', { class: 'thumb' },
-            e.thumb && h('img', { src: e.thumb, alt: '', loading: 'lazy', onerror: (ev) => ev.target.remove() }),
+            e.thumb && lazyImg(e.thumb),
             r > 0.01 && h('div', { class: 'bar' }, h('i', { style: `width:${Math.round(Math.min(r, 1) * 100)}%` }))),
           h('div', {},
             h('div', { class: 't' }, h('b', { text: e.title || `Episode ${e.number}` }), e.runtime && h('span', { text: e.runtime })),
@@ -314,23 +438,29 @@
         const n = s.number ?? 1;
         return h('option', { value: String(n), selected: n === modalSeason, text: s.title || `Season ${n}` });
       }));
-      seasonsUI = h('div', {},
-        h('div', { class: 'season-bar' }, h('h3', { text: 'Episodes' }), sel), epBox);
+      seasonsUI = h('div', {}, h('div', { class: 'season-bar' }, h('h3', { text: 'Episodes' }), sel), epBox);
       fillEpisodes();
     }
 
+    const setListBtn = (b) => b.replaceChildren(ico(inList(item.id) ? 'check' : 'plus'), inList(item.id) ? 'In My List' : 'My List');
     const listBtn = h('button', {
-      class: 'btn', text: inList(item.id) ? '✓ In My List' : '+ My List',
-      onclick: (e) => { toggleList(item.id); e.target.textContent = inList(item.id) ? '✓ In My List' : '+ My List'; },
+      class: 'btn',
+      onclick: (e) => {
+        toggleList(item.id);
+        setListBtn(e.currentTarget);
+        toast(inList(item.id) ? 'Added to My List' : 'Removed from My List');
+      },
     });
+    setListBtn(listBtn);
 
     modalCard.replaceChildren(
-      h('div', { class: 'm-hero', style: bg ? `background-image:url("${encodeURI(bg)}")` : '' },
-        h('button', { class: 'm-close', 'aria-label': 'Close', text: '✕', onclick: closeModal }),
+      h('div', { class: 'm-hero' },
+        h('div', { class: 'm-bg', style: bgStyle(item) }),
+        h('button', { class: 'm-close', 'aria-label': 'Close', onclick: closeModal }, ico('x')),
         h('div', { class: 'm-hero-content' },
           h('h2', { id: 'modalTitle', text: item.title }),
           h('div', { class: 'row' },
-            target && h('button', { class: 'btn primary', text: '▶ ' + playLabel(item), onclick: () => openPlayer(item, target.key) }),
+            target && h('button', { class: 'btn primary', onclick: () => openPlayer(item, target.key) }, ico('play'), playLabel(item)),
             listBtn))),
       h('div', { class: 'm-body' },
         metaRow(item),
@@ -342,10 +472,10 @@
   /* ---------- player ---------- */
   const el = { player: $('#player') };
   const v = $('#video');
-  const seek = $('#pSeek'), vol = $('#pVol');
+  const seek = $('#pSeek'), vol = $('#pVol'), tip = $('#pTip');
   let cur = null;           // {item, list, idx}
   let hls = null, hlsPromise = null;
-  let loadToken = 0, lastSave = 0, idleTimer = null, nextTimer = null;
+  let loadToken = 0, lastSave = 0, idleTimer = null, nextTimer = null, closing = false;
   let scrubbing = false, tapWasIdle = false, lastPointer = 'mouse';
 
   const setFill = (inp) => inp.style.setProperty('--p', ((inp.value - inp.min) / (inp.max - inp.min)) * 100 + '%');
@@ -392,6 +522,7 @@
   }
 
   function openPlayer(item, key) {
+    if (closing) return;
     const list = playablesOf(item);
     if (!list.length) return;
     const idx = Math.max(0, list.findIndex((p) => p.key === key));
@@ -401,7 +532,6 @@
     history.pushState({ p: 1 }, '');
     loadEpisode(idx);
     showControls();
-    el.player.focus?.();
   }
 
   function loadEpisode(idx) {
@@ -451,42 +581,48 @@
   }
 
   function closePlayer() {
-    if (!cur) return;
+    if (!cur || closing) return;
     if (history.state && history.state.p) history.back();   // popstate handler tears down
     else teardown();
   }
 
   function teardown() {
-    if (!cur) return;
+    if (!cur || closing) return;
+    closing = true;
     saveProgress();
     cancelNext();
     v.pause();
-    destroyHls();
-    ++loadToken;
-    v.removeAttribute('src');
-    v.querySelectorAll('track').forEach((t) => t.remove());
-    v.load();
+    el.player.classList.add('closing');
     if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
     else if (document.webkitFullscreenElement && document.webkitExitFullscreen) document.webkitExitFullscreen();
-    el.player.hidden = true;
-    cur = null;
-    if (modal.hidden) document.body.classList.remove('lock');
-    route();   // refresh Continue Watching / progress bars
+    setTimeout(() => {
+      destroyHls();
+      ++loadToken;
+      v.removeAttribute('src');
+      v.querySelectorAll('track').forEach((t) => t.remove());
+      v.load();
+      el.player.hidden = true;
+      el.player.classList.remove('closing');
+      cur = null;
+      closing = false;
+      if (modal.hidden) document.body.classList.remove('lock');
+      route();   // refresh Continue Watching / progress bars
+    }, reduce ? 0 : 330);
   }
 
   /* -- player controls -- */
   function togglePlay() {
-    if (v.paused || v.ended) { v.play().catch(() => {}); flash('▶'); }
-    else { v.pause(); flash('❚❚'); }
+    if (v.paused || v.ended) { v.play().catch(() => {}); flash('play'); }
+    else { v.pause(); flash('pause'); }
   }
   function skip(sec) {
     if (!isFinite(v.duration)) return;
     v.currentTime = Math.max(0, Math.min(v.duration, v.currentTime + sec));
-    flash(sec < 0 ? '⟲' : '⟳');
+    flash(sec < 0 ? 'back10' : 'fwd10');
   }
-  function flash(sym) {
+  function flash(name) {
     const c = $('#pCenter');
-    c.textContent = sym;
+    c.innerHTML = svg(name);
     c.classList.remove('pop');
     void c.offsetWidth;
     c.classList.add('pop');
@@ -513,10 +649,10 @@
     }, 3000);
   }
 
-  function updatePlayUI() { $('#pPlay').textContent = v.paused ? '▶' : '❚❚'; }
+  function updatePlayUI() { $('#pPlay').innerHTML = svg(v.paused ? 'play' : 'pause'); }
   function updateVolUI() {
     const muted = v.muted || v.volume === 0;
-    $('#pMute').textContent = muted ? '🔇' : '🔊';
+    $('#pMute').innerHTML = svg(muted ? 'mute' : 'vol');
     vol.value = muted ? 0 : v.volume;
     setFill(vol);
   }
@@ -573,10 +709,14 @@
     const nxt = cur.list[cur.idx + 1];
     const label = () => { $('#pNextText').textContent = `Next: S${nxt.season}:E${nxt.number}${nxt.title ? ' ' + nxt.title : ''} — in ${n}s`; };
     $('#pNext').hidden = false;
+    const bar = $('#pNextBar');
+    bar.classList.remove('run');
+    void bar.offsetWidth;
+    bar.classList.add('run');
     label();
     nextTimer = setInterval(() => { n -= 1; if (n <= 0) goNext(); else label(); }, 1000);
   }
-  function cancelNext() { clearInterval(nextTimer); nextTimer = null; $('#pNext').hidden = true; }
+  function cancelNext() { clearInterval(nextTimer); nextTimer = null; $('#pNext').hidden = true; $('#pNextBar').classList.remove('run'); }
   function goNext() { if (cur && cur.idx < cur.list.length - 1) loadEpisode(cur.idx + 1); }
 
   /* -- wiring -- */
@@ -600,6 +740,9 @@
   v.addEventListener('dblclick', toggleFullscreen);
   el.player.addEventListener('pointermove', showControls);
   el.player.addEventListener('pointerdown', showControls);
+  document.addEventListener('fullscreenchange', () => {
+    $('#pFull').innerHTML = svg(document.fullscreenElement ? 'exit' : 'full');
+  });
 
   seek.addEventListener('pointerdown', () => { scrubbing = true; });
   window.addEventListener('pointerup', () => { scrubbing = false; });
@@ -607,6 +750,14 @@
     if (isFinite(v.duration)) v.currentTime = (seek.value / 1000) * v.duration;
     setFill(seek);
   });
+  seek.addEventListener('pointermove', (e) => {
+    const r = seek.getBoundingClientRect();
+    const f = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
+    tip.textContent = fmt(f * (v.duration || 0));
+    tip.style.left = f * r.width + 'px';
+    tip.classList.add('on');
+  });
+  seek.addEventListener('pointerleave', () => tip.classList.remove('on'));
   vol.addEventListener('input', () => setVolume(Number(vol.value)));
 
   $('#pBack').addEventListener('click', closePlayer);
@@ -653,6 +804,92 @@
   // Stop Space on a focused button from clicking it a second time.
   document.addEventListener('keyup', (e) => { if (!el.player.hidden && e.key === ' ') e.preventDefault(); });
 
+  /* ---------- motion layer ---------- */
+  // Click ripple on buttons, cards and episode rows.
+  document.addEventListener('pointerdown', (e) => {
+    if (reduce) return;
+    const t = e.target.closest('.btn, .icon-btn, .card, .ep, .menu button');
+    if (!t) return;
+    const r = t.getBoundingClientRect();
+    const d = Math.max(r.width, r.height) * 2.2;
+    const s = h('span', { class: 'ripple', style: `width:${d}px;height:${d}px;left:${e.clientX - r.left - d / 2}px;top:${e.clientY - r.top - d / 2}px` });
+    t.append(s);
+    s.addEventListener('animationend', () => s.remove());
+  });
+
+  // 3D tilt + glare following the mouse over cards.
+  main.addEventListener('pointermove', (e) => {
+    if (e.pointerType !== 'mouse' || reduce) return;
+    const c = e.target.closest('.card');
+    if (!c) return;
+    const r = c.getBoundingClientRect();
+    const px = (e.clientX - r.left) / r.width, py = (e.clientY - r.top) / r.height;
+    c.style.setProperty('--ry', ((px - 0.5) * 16).toFixed(2) + 'deg');
+    c.style.setProperty('--rx', ((0.5 - py) * 16).toFixed(2) + 'deg');
+    c.style.setProperty('--mx', (px * 100).toFixed(1) + '%');
+    c.style.setProperty('--my', (py * 100).toFixed(1) + '%');
+  });
+  main.addEventListener('pointerout', (e) => {
+    const c = e.target.closest && e.target.closest('.card');
+    if (!c || c.contains(e.relatedTarget)) return;
+    c.style.removeProperty('--rx');
+    c.style.removeProperty('--ry');
+  });
+
+  // Soft red spotlight that trails the cursor.
+  function initGlow() {
+    const g = $('#glow');
+    if (!finePointer || reduce) { g.remove(); return; }
+    let tx = -900, ty = -900, x = tx, y = ty, running = false;
+    const loop = () => {
+      x += (tx - x) * 0.09;
+      y += (ty - y) * 0.09;
+      g.style.transform = `translate3d(${x - 300}px, ${y - 300}px, 0)`;
+      if (Math.abs(tx - x) + Math.abs(ty - y) > 0.5) requestAnimationFrame(loop);
+      else running = false;
+    };
+    window.addEventListener('pointermove', (e) => {
+      if (x < -800) { x = e.clientX; y = e.clientY; }
+      tx = e.clientX; ty = e.clientY;
+      if (!running) { running = true; requestAnimationFrame(loop); }
+    }, { passive: true });
+  }
+
+  // Scroll progress, hero parallax, auto-hiding top bar.
+  let lastY = 0, scrollTick = false;
+  function onScroll() {
+    if (scrollTick) return;
+    scrollTick = true;
+    requestAnimationFrame(() => {
+      scrollTick = false;
+      const y = window.scrollY;
+      const max = document.documentElement.scrollHeight - window.innerHeight;
+      $('#sp').style.transform = `scaleX(${max > 0 ? Math.min(1, y / max) : 0})`;
+      const bar = $('#topbar');
+      bar.classList.toggle('solid', y > 30);
+      if (y > 320 && y > lastY + 4 && el.player.hidden && modal.hidden) bar.classList.add('hide');
+      else if (y < lastY - 4 || y <= 320) bar.classList.remove('hide');
+      lastY = y;
+      const hero = main.querySelector('.hero');
+      if (hero && y < window.innerHeight * 1.3) {
+        hero.style.setProperty('--py', (y * 0.28).toFixed(1) + 'px');
+        hero.style.setProperty('--ho', Math.max(0, 1 - y / (window.innerHeight * 0.8)).toFixed(3));
+      }
+    });
+  }
+
+  function playIntro(name) {
+    const intro = $('#intro');
+    if (!intro) return;
+    const word = $('#introWord');
+    [...name.toUpperCase()].forEach((ch, i) => word.append(h('span', { style: `--i:${i}`, text: ch === ' ' ? ' ' : ch })));
+    intro.classList.add('go');
+    setTimeout(() => {
+      intro.classList.add('done');
+      setTimeout(() => intro.remove(), 1200);
+    }, reduce ? 0 : 1400);
+  }
+
   /* ---------- routing + boot ---------- */
   function route() {
     const hash = location.hash || '#/';
@@ -679,18 +916,35 @@
       local && h('p', {}, h('code', { text: 'python3 tools/serve.py' }), ' then open http://localhost:8000')));
   }
 
+  function initIcons() {
+    $('#pBack').innerHTML = svg('back');
+    $('#pBack10').innerHTML = svg('back10');
+    $('#pFwd10').innerHTML = svg('fwd10');
+    $('#pFull').innerHTML = svg('full');
+    $('#pNextEp').innerHTML = 'Next ' + svg('next');
+    updatePlayUI();
+  }
+
   async function init() {
+    initIcons();
     const saved = store.get('vol', null);
     if (saved) { v.volume = saved.v; v.muted = !!saved.m; }
     updateVolUI();
     updateSpeedUI();
-    window.addEventListener('scroll', () => $('#topbar').classList.toggle('solid', window.scrollY > 30), { passive: true });
+    initGlow();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', moveInk);
 
     try {
       const res = await fetch('library.json', { cache: 'no-cache' });
       if (!res.ok) throw new Error('library.json: HTTP ' + res.status);
       lib = await res.json();
-    } catch (err) { showLoadError(err); return; }
+    } catch (err) {
+      const intro = $('#intro');
+      if (intro) intro.remove();
+      showLoadError(err);
+      return;
+    }
 
     lib.items = (lib.items || []).filter((i) => i && i.id && i.title).map((i) => ({
       ...i, type: i.type || (i.seasons ? 'show' : 'movie'),
@@ -712,7 +966,11 @@
     });
     $('#searchForm').addEventListener('submit', (e) => e.preventDefault());
     window.addEventListener('hashchange', route);
-    route();
+
+    playIntro(lib.siteName || 'Library');
+    // Build the page behind the splash so it is ready as the curtain lifts.
+    setTimeout(() => { route(); onScroll(); }, reduce ? 0 : 1000);
+    document.fonts && document.fonts.ready.then(moveInk);
   }
 
   init();

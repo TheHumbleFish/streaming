@@ -72,4 +72,4 @@ Copy your files into `media/` and add an entry like the demo ones. Fields:
 ## Customising
 
 - Site name: `siteName` in `library.json`.
-- Colours: the variables at the top of `css/style.css` (`--accent` etc.).
+- Colours: the variables at the top of `css/style.css` (`--accent` is the red). The page is animated throughout and switches most motion off for visitors who have "reduce motion" set in their system.
