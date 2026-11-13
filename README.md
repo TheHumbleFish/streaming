@@ -1,4 +1,4 @@
-# My Streaming Library
+# CINEVA
 
 A Netflix-style site for **your own videos**, built to run on GitHub Pages. It's plain HTML/CSS/JS, so there's no build step and no server.
 

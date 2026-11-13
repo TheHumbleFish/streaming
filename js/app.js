@@ -887,7 +887,7 @@
     setTimeout(() => {
       intro.classList.add('done');
       setTimeout(() => intro.remove(), 1200);
-    }, reduce ? 0 : 1400);
+    }, reduce ? 0 : 1900);
   }
 
   /* ---------- routing + boot ---------- */
@@ -951,7 +951,7 @@
     }));
     byId = new Map(lib.items.map((i) => [String(i.id), i]));
     document.title = lib.siteName || 'Library';
-    $('#brand').textContent = lib.siteName || 'Library';
+    $('#brandText').textContent = lib.siteName || 'Library';
 
     let t;
     $('#searchInput').addEventListener('input', (e) => {
@@ -969,7 +969,7 @@
 
     playIntro(lib.siteName || 'Library');
     // Build the page behind the splash so it is ready as the curtain lifts.
-    setTimeout(() => { route(); onScroll(); }, reduce ? 0 : 1000);
+    setTimeout(() => { route(); onScroll(); }, reduce ? 0 : 1500);
     document.fonts && document.fonts.ready.then(moveInk);
   }
 

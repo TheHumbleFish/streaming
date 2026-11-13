@@ -171,7 +171,7 @@ def add_subs(specs, out_dir, base):
 def load_lib():
     if LIB.exists():
         return json.loads(LIB.read_text(encoding="utf-8"))
-    return {"siteName": "My Library", "items": []}
+    return {"siteName": "CINEVA", "items": []}
 
 
 def save_lib(lib):

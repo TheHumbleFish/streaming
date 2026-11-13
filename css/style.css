@@ -87,9 +87,13 @@ img { display: block; max-width: 100%; }
   font-weight: 800; font-size: clamp(2rem, 9vw, 5.5rem); letter-spacing: .14em; text-transform: uppercase;
 }
 .intro-word span { display: inline-block; transform: translateY(115%); }
-#intro.go .intro-word span { animation: rise .9s var(--ease) forwards; animation-delay: calc(var(--i) * 60ms + .1s); }
+#intro.go .intro-word span { animation: rise .9s var(--ease) forwards; animation-delay: calc(var(--i) * 60ms + .5s); }
 .intro-line { height: 2px; width: 0; background: var(--accent); box-shadow: 0 0 24px var(--glow); }
-#intro.go .intro-line { animation: lineW 1.1s var(--ease) .5s forwards; }
+#intro.go .intro-line { animation: lineW 1.1s var(--ease) 1s forwards; }
+.intro-logo { width: clamp(90px, 17vw, 160px); height: auto; opacity: 0; transform: scale(.55) rotate(-14deg); }
+#intro.go .intro-logo { animation: logoIn 1.2s var(--ease) forwards, logoPulse 2.4s ease-in-out 1.2s infinite; }
+@keyframes logoIn { to { opacity: 1; transform: none; } }
+@keyframes logoPulse { 50% { filter: drop-shadow(0 0 28px var(--glow)); } }
 
 /* ---------- Ambient layers ---------- */
 .grain {
@@ -119,9 +123,9 @@ img { display: block; max-width: 100%; }
 .topbar.solid::before { opacity: 0; }
 .topbar.hide { transform: translateY(-110%); }
 
-.brand { display: flex; align-items: center; gap: 12px; font-weight: 800; font-size: .95rem; letter-spacing: .3em; text-transform: uppercase; white-space: nowrap; }
-.brand::before { content: ""; width: 9px; height: 9px; background: var(--accent); transform: rotate(45deg); animation: pulse 2.4s infinite; transition: transform .6s var(--spring); }
-.brand:hover::before { transform: rotate(225deg) scale(1.3); }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: .95rem; letter-spacing: .3em; text-transform: uppercase; white-space: nowrap; }
+.brand-logo { width: auto; height: 34px; filter: drop-shadow(0 0 10px var(--glow)); transition: transform .7s var(--spring), filter .4s; }
+.brand:hover .brand-logo { transform: rotate(-10deg) scale(1.18); filter: drop-shadow(0 0 16px var(--accent)); }
 
 .nav { position: relative; display: flex; gap: 30px; }
 .nav a { padding: 8px 0; font-size: .7rem; letter-spacing: .24em; text-transform: uppercase; color: var(--muted); transition: color .35s, transform .4s var(--ease); }
