@@ -521,12 +521,20 @@
     }).catch(() => showError('Could not load the HLS player library (needs js/hls.min.js or internet access).'));
   }
 
+  // Tall (9:16) videos get a centred full-height column over a blurred backdrop.
+  function setVertical(on, item) {
+    el.player.classList.toggle('vertical', on);
+    const img = item && (item.poster || item.backdrop);
+    el.player.style.setProperty('--bgimg', on && img ? `url("${new URL(encodeURI(img), location.href).href}")` : 'none');
+  }
+
   function openPlayer(item, key) {
     if (closing) return;
     const list = playablesOf(item);
     if (!list.length) return;
     const idx = Math.max(0, list.findIndex((p) => p.key === key));
     cur = { item, list, idx };
+    setVertical(item.format === 'vertical', item);   // hint; confirmed once the video loads
     el.player.hidden = false;
     document.body.classList.add('lock');
     history.pushState({ p: 1 }, '');
@@ -556,6 +564,7 @@
     const start = p && ratioOf(pl.key) <= 0.95 && p.t > 5 ? p.t : 0;
     v.addEventListener('loadedmetadata', () => {
       if (token !== loadToken) return;
+      setVertical(v.videoHeight > v.videoWidth, cur.item);
       if (start && start < v.duration - 3) v.currentTime = start;
       applySubPref(pl);
       buildCCMenu();
@@ -602,7 +611,7 @@
       v.querySelectorAll('track').forEach((t) => t.remove());
       v.load();
       el.player.hidden = true;
-      el.player.classList.remove('closing');
+      el.player.classList.remove('closing', 'vertical');
       cur = null;
       closing = false;
       if (modal.hidden) document.body.classList.remove('lock');

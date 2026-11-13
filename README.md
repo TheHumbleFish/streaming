@@ -59,6 +59,14 @@ Copy your files into `media/` and add an entry like the demo ones. Fields:
 - GitHub Pages sites should stay under about **1 GB** and have a soft limit of about **100 GB bandwidth per month**. That's fine for friends and family, but too small for a real streaming service.
 - HLS (`.m3u8`) plays natively in Safari. Other browsers load [hls.js](https://github.com/video-dev/hls.js) from a CDN on demand. To avoid the CDN, drop `hls.min.js` into `js/`.
 
+## Vertical (reel-style) movies
+
+Full-length movies shot or edited in 9:16 work out of the box. The player detects tall video by itself: on a computer it shows a centred full-height column over a blurred copy of the poster, and on a phone it fills the screen. Posters are already portrait, so they look right on the home page.
+
+The helper script spots vertical files too, sets `"format": "vertical"` in `library.json`, and builds the poster and backdrop to suit. With `--compress`, vertical video is capped at 720 px wide (about 720×1280).
+
+Vertical movies are still big files. Use `--hls` for anything long so each file stays under GitHub's 100 MB limit, and watch the overall repo size.
+
 ## Playback tips
 
 - Browsers play **MP4 (H.264 + AAC)**, WebM, and HLS. They can't play raw `.mkv`, `.avi`, HEVC/H.265 (mostly) or `.srt` subtitles, so convert them first. The helper script does this.

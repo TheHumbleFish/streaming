@@ -60,12 +60,26 @@ def rel(p):
 
 
 def probe(path):
-    info = json.loads(run(["ffprobe", "-v", "error", "-show_entries", "format=duration:stream=codec_type,codec_name",
+    """Returns (duration, video codec, audio codec, width, height) with phone rotation applied."""
+    info = json.loads(run(["ffprobe", "-v", "error", "-show_entries",
+                           "format=duration:stream=codec_type,codec_name,width,height:stream_tags=rotate:stream_side_data=rotation",
                            "-of", "json", str(path)]))
     streams = info.get("streams", [])
-    v = next((s["codec_name"] for s in streams if s["codec_type"] == "video"), None)
-    a = next((s["codec_name"] for s in streams if s["codec_type"] == "audio"), None)
-    return float(info["format"].get("duration", 0)), v, a
+    vs = next((s for s in streams if s.get("codec_type") == "video"), None)
+    a = next((s.get("codec_name") for s in streams if s.get("codec_type") == "audio"), None)
+    v = w = h = None
+    if vs:
+        v, w, h = vs.get("codec_name"), vs.get("width"), vs.get("height")
+        rot = (vs.get("tags") or {}).get("rotate")
+        for sd in vs.get("side_data_list") or []:
+            if "rotation" in sd:
+                rot = sd["rotation"]
+        try:
+            if abs(int(float(rot))) % 180 == 90 and w and h:
+                w, h = h, w
+        except (TypeError, ValueError):
+            pass
+    return float(info["format"].get("duration", 0)), v, a, w, h
 
 
 def runtime_str(sec):
@@ -80,48 +94,50 @@ def web_friendly(path, v, a):
     return ext == ".webm" and v in ("vp8", "vp9", "av1") and a in (None, "opus", "vorbis")
 
 
-def encode_args(src, v, a, compress, force_encode):
+def encode_args(src, v, a, compress, force_encode, vertical=False):
     copy = web_friendly(src, v, a) and not compress and not force_encode
     if copy:
         return ["-c", "copy"]
     args = ["-map", "0:v:0", "-map", "0:a:0?", "-c:v", "libx264", "-preset", "medium",
             "-crf", "27" if compress else "23", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k" if compress else "160k"]
-    if compress:
-        args += ["-vf", "scale=-2:'min(720,ih)'"]
+    if compress:  # cap the short side at 720 px (720 wide for vertical video, 720 high otherwise)
+        args += ["-vf", "scale='min(720,iw)':-2" if vertical else "scale=-2:'min(720,ih)'"]
     return args
 
 
 def process_video(src, out_dir, base, hls, compress):
-    """Returns (path to playable file relative to ROOT, duration seconds)."""
+    """Returns (path to playable file relative to ROOT, duration seconds, is_vertical)."""
     need_ffmpeg()
-    dur, v, a = probe(src)
+    dur, v, a, w, h = probe(src)
     if not v:
         die(f"{src} has no video stream")
+    vertical = bool(w and h and h > w)
+    if vertical:
+        print("  vertical (9:16-style) video detected")
     out_dir.mkdir(parents=True, exist_ok=True)
     if hls:
         d = out_dir / base
         d.mkdir(exist_ok=True)
-        enc = encode_args(src, v, a, compress, force_encode=not (v == "h264" and a in (None, "aac")))
-        if enc == ["-c", "copy"] and web_friendly(src, v, a) is False:
-            enc = encode_args(src, v, a, compress, True)
+        can_copy = v == "h264" and a in (None, "aac") and not compress
+        enc = ["-c", "copy"] if can_copy else encode_args(src, v, a, compress, True, vertical)
         print(f"  cutting into HLS segments → {d}")
         run(["ffmpeg", "-loglevel", "error", "-y", "-i", str(src), *enc, "-f", "hls", "-hls_time", "6",
              "-hls_playlist_type", "vod", "-hls_segment_filename", str(d / "seg_%05d.ts"), str(d / "index.m3u8")])
-        return rel(d / "index.m3u8"), dur
+        return rel(d / "index.m3u8"), dur, vertical
     ext = ".webm" if web_friendly(src, v, a) and src.suffix.lower() == ".webm" and not compress else ".mp4"
     out = out_dir / (base + ext)
-    if encode_args(src, v, a, compress, False) == ["-c", "copy"]:
+    if encode_args(src, v, a, compress, False, vertical) == ["-c", "copy"]:
         print(f"  already web-friendly, copying → {out}")
         shutil.copy2(src, out)
     else:
         print(f"  converting to MP4 (H.264/AAC) → {out}  (this can take a while)")
-        run(["ffmpeg", "-loglevel", "error", "-y", "-i", str(src), *encode_args(src, v, a, compress, False),
+        run(["ffmpeg", "-loglevel", "error", "-y", "-i", str(src), *encode_args(src, v, a, compress, False, vertical),
              "-movflags", "+faststart", str(out)])
     size = out.stat().st_size
     if size > LIMIT:
         print(f"  ! {out.name} is {size / 1048576:.0f} MB — GitHub blocks files over 100 MB.\n"
               f"    Re-run with --hls (segments) or --compress (720p), or host the file elsewhere.")
-    return rel(out), dur
+    return rel(out), dur, vertical
 
 
 def grab_frame(src, dur, out, frac, vf):
@@ -129,11 +145,18 @@ def grab_frame(src, dur, out, frac, vf):
          "-frames:v", "1", "-vf", vf, "-q:v", "3", str(out)])
 
 
-def make_art(src, dur, out_dir, name):
+def make_art(src, dur, out_dir, name, vertical=False):
     """poster (2:3) + backdrop (16:9) from a frame, unless the user supplies their own."""
     poster, backdrop = out_dir / f"{name}poster.jpg", out_dir / f"{name}backdrop.jpg"
-    grab_frame(src, dur, poster, 0.12, "crop=ih*2/3:ih,scale=400:600")
-    grab_frame(src, dur, backdrop, 0.12, "scale=1280:-2")
+    if vertical:
+        grab_frame(src, dur, poster, 0.12, "crop=iw:iw*3/2:0:(ih-iw*3/2)/2,scale=400:600")
+        # tall frame centred over a blurred, darkened copy of itself
+        grab_frame(src, dur, backdrop, 0.12,
+                   "split[a][b];[a]scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720,"
+                   "boxblur=30:3,eq=brightness=-0.25[bg];[b]scale=-2:720[fg];[bg][fg]overlay=(W-w)/2:0")
+    else:
+        grab_frame(src, dur, poster, 0.12, "crop=ih*2/3:ih,scale=400:600")
+        grab_frame(src, dur, backdrop, 0.12, "scale=1280:-2")
     return rel(poster), rel(backdrop)
 
 
@@ -208,18 +231,20 @@ def cmd_movie(a):
     sid = slug(title)
     out_dir = ROOT / "media" / sid
     print(f"Adding movie: {title}")
-    path, dur = process_video(src, out_dir, sid, a.hls, a.compress)
+    path, dur, vertical = process_video(src, out_dir, sid, a.hls, a.compress)
     lib = load_lib()
     item = find(lib, sid) or {"id": sid, "type": "movie"}
     item.update({"title": title, "type": "movie", "src": path, "runtime": runtime_str(dur),
                  "added": datetime.date.today().isoformat()})
     set_meta(item, a)
+    if vertical:
+        item["format"] = "vertical"
     if a.poster:
         item["poster"] = copy_art(a.poster, out_dir, "poster")
     if a.backdrop:
         item["backdrop"] = copy_art(a.backdrop, out_dir, "backdrop")
     if "poster" not in item or "backdrop" not in item:
-        p, b = make_art(src, dur, out_dir, "")
+        p, b = make_art(src, dur, out_dir, "", vertical)
         item.setdefault("poster", p)
         item.setdefault("backdrop", b)
     subs = add_subs(a.subs, out_dir, sid)
@@ -260,7 +285,9 @@ def cmd_episode(a):
     out_dir = ROOT / "media" / show["id"]
     base = f"s{a.season:02d}e{a.episode:02d}"
     print(f"Adding {show['title']} S{a.season}:E{a.episode}")
-    path, dur = process_video(src, out_dir, base, a.hls, a.compress)
+    path, dur, vertical = process_video(src, out_dir, base, a.hls, a.compress)
+    if vertical:
+        show["format"] = "vertical"
     ep = {"number": a.episode, "title": a.title or f"Episode {a.episode}", "src": path, "runtime": runtime_str(dur)}
     if a.description:
         ep["description"] = a.description
@@ -279,7 +306,7 @@ def cmd_episode(a):
     season["episodes"].sort(key=lambda e: e["number"])
     # Use the first episode's frame as show art if none yet.
     if "poster" not in show or "backdrop" not in show:
-        p, b = make_art(src, dur, out_dir, "")
+        p, b = make_art(src, dur, out_dir, "", vertical)
         show.setdefault("poster", p)
         show.setdefault("backdrop", b)
     save_lib(lib)
